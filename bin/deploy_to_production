@@ -95,7 +95,7 @@ git pull
 set +e
 # Check if latest commit is already deployed
 deployed_tag=$(git describe --exact-match --tags HEAD 2>/dev/null)
-# $? stores the exit code of the last runned command
+# $? stores the exit code of the last run command
 if [[ $? == 0 ]]; then
   msg "Latest commit on master is already deployed with tag $deployed_tag"
   exit 1
@@ -119,25 +119,24 @@ new_tag="v"
 if [[ $semver == "major" ]]; then
   new_major=$((current_version[0] + 1))
   new_tag="$new_tag$new_major.0.0"
-fi
-
-if [[ $semver == "minor" ]]; then
+elif [[ $semver == "minor" ]]; then
   new_minor=$((current_version[1] + 1))
   new_tag="$new_tag${current_version[0]}.$new_minor.0"
-fi
-
-if [[ $semver == "patch" ]]; then
+elif [[ $semver == "patch" ]]; then
   new_patch=$((current_version[2] + 1))
   new_tag="$new_tag${current_version[0]}.${current_version[1]}.$new_patch"
 fi
 
 release_commits=$(git log --pretty="* %s (%an)" $(git describe --tags --abbrev=0 @^)..@)
+changelog_url="$base_url/compare/$most_recent_tag...$new_tag"
 
 release_message=$(
   cat <<END_HEREDOC
 $release_title
 
 $release_commits
+
+Full changelog: $changelog_url
 END_HEREDOC
 )
 
@@ -152,4 +151,4 @@ else
 fi
 
 base_url="https://github.$(git config remote.origin.url | cut -f2 -d. | tr ':' /)"
-msg "Deploy started, new changes in this deploy: $base_url/compare/$most_recent_tag...$new_tag"
+msg "Deploy started, new changes in this deploy: $changelog_url"
