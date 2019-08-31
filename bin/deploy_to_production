@@ -6,23 +6,31 @@ function msg() {
   echo "*** $*"
 }
 
-## Validations ##
+function confirm() {
+  confirming_message="I will be responsible for the consequences of deploying out of working hours."
 
-# Check the time, add warning if deploying after 5PM or before 9AM
-hour=$(date +"%-H")
-if ((hour >= 17)) || ((hour < 9)); then
-  confirming_message="I really want to deploy after hours and will be responsible for the consequences."
-  msg "Are you sure you want to deploy? It's quite late in the day!"
-  msg "If you are really sure type the following:"
+  msg "If you are really sure, type the following:"
   msg "$confirming_message"
   read typed_message
   if [[ $typed_message != $confirming_message ]]; then
     msg "Messages did not match, aborting deploy."
     exit 1
   fi
-fi
+}
 
-# TODO: Check that hub is available to use
+## Validations ##
+
+# Check the time, add warning if deploying after 5PM or before 9AM
+hour=$(date +"%-H")
+# Check the day of the week, add warning if deploying on Saturday or Sunday
+day=$(date +"%-A")
+if ((hour >= 17)) || ((hour < 9)); then
+  msg "Are you sure you want to deploy? It's quite late in the day!"
+  confirm
+elif [[ $day == "Saturday" || $day == "Sunday" ]]; then
+  msg "Are you sure you want to deploy? It's $day!"
+  confirm
+fi
 
 ## Parse input options ##
 
@@ -35,7 +43,7 @@ semver="patch"
 while [[ $# -gt 0 ]]; do
   key="$1"
   case "$key" in
-  # Syntax help
+  # Syntax overview
   -h | --help)
     cat <<HELP
 Usage: bin/deploy_to_production [-c | --commit <commit hash>]
@@ -60,13 +68,13 @@ HELP
     shift
     semver="$1"
     if [[ $semver != "patch" || $semver != "minor" || $semver != "major" ]]; then
-      msg "semver-type needs to be one of [patch, major, minor]"
+      msg "ERROR: Invalid semver-type: '$semver', expected one of [patch, major, minor]"
       exit 1
     fi
     ;;
   *)
     # Do whatever you want with extra options
-    echo "Unknown option: '$key'"
+    echo "ERROR: Unknown option: '$key'"
     exit 1
     ;;
   esac
@@ -95,9 +103,16 @@ git pull
 set +e
 # Check if latest commit is already deployed
 deployed_tag=$(git describe --exact-match --tags HEAD 2>/dev/null)
-# $? stores the exit code of the last run command
+# $? stores the exit code of the last command which was run
 if [[ $? == 0 ]]; then
   msg "Latest commit on master is already deployed with tag $deployed_tag"
+  exit 0
+fi
+
+# Check that hub is available to use
+hub --version > /dev/null 2>&1
+if [[ $? != 0 ]]; then
+  msg "ERROR: hub is not accessible, aborting deploy. Please install hub and try again."
   exit 1
 fi
 
@@ -130,8 +145,7 @@ fi
 release_commits=$(git log --pretty="* %s (%an)" $(git describe --tags --abbrev=0 @^)..@)
 changelog_url="$base_url/compare/$most_recent_tag...$new_tag"
 
-release_message=$(
-  cat <<END_HEREDOC
+release_message=$(cat <<END_HEREDOC
 $release_title
 
 $release_commits
