@@ -34,8 +34,10 @@ fi
 
 ## Parse input options ##
 
+dryrun=false
 commit=""
-release_title="New enterprise-app release"
+app=$(basename $PWD)
+release_title="New $app release"
 semver="patch"
 
 # From: https://stackoverflow.com/a/39398359
@@ -47,6 +49,7 @@ while [[ $# -gt 0 ]]; do
   -h | --help)
     cat <<HELP
 Usage: bin/deploy_to_production [-c | --commit <commit hash>]
+                                [-d | --dry-run
                                 [-m | --message <release message>]
                                 [-s | --semver-type <patch (default) | minor | major>]
                                 [-h | --help]
@@ -57,6 +60,10 @@ HELP
   -c | --commit)
     shift
     commit="$1"
+    ;;
+  # Don't actually create the release in Github
+  -d | --dry-run)
+    dryrun=true
     ;;
   # Specify the release title to use
   -m | --message)
@@ -81,10 +88,6 @@ HELP
   # Shift after checking all the cases to get the next option
   shift
 done
-
-echo "commit=$commit"
-echo "release_title=$release_title"
-echo "semver=$semver"
 
 # Checkout master if not yet done
 branch_name=$(git symbolic-ref -q HEAD)
@@ -142,7 +145,8 @@ elif [[ $semver == "patch" ]]; then
   new_tag="$new_tag${current_version[0]}.${current_version[1]}.$new_patch"
 fi
 
-release_commits=$(git log --pretty="* %s (%an)" $(git describe --tags --abbrev=0 @^)..@)
+release_commits=$(git log --reverse --pretty="* %s (%an)" $(git describe --tags --abbrev=0 @^)..@)
+base_url="https://github.$(git config remote.origin.url | cut -f2 -d. | tr ':' /)"
 changelog_url="$base_url/compare/$most_recent_tag...$new_tag"
 
 release_message=$(cat <<END_HEREDOC
@@ -154,7 +158,11 @@ Full changelog: $changelog_url
 END_HEREDOC
 )
 
-echo "$release_message"
+if [ "$dryrun" = true ]; then
+  msg "Dry run flag is set, aborting deployment"
+  echo -e "\n$release_message"
+  exit
+fi
 
 msg "Releasing $new_tag to production"
 
@@ -164,5 +172,4 @@ else
   hub release create -m "$release_message" $new_tag
 fi
 
-base_url="https://github.$(git config remote.origin.url | cut -f2 -d. | tr ':' /)"
-msg "Deploy started, new changes in this deploy: $changelog_url"
+msg "Release created, new changes in this release: $changelog_url"
