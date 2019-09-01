@@ -23,8 +23,6 @@ function confirm() {
   fi
 }
 
-## Validations ##
-
 # Check the time, add warning if deploying after 5PM or before 9AM
 hour=$(date +"%-H")
 # Check the day of the week, add warning if deploying on Saturday or Sunday
@@ -53,7 +51,7 @@ while [[ $# -gt 0 ]]; do
   # Syntax overview
   -h | --help)
     cat <<HELP
-Usage: bin/deploy_to_production [-c | --commit <commit hash>]
+Usage: bin/deploy_to_production [-c | --commit <FULL commit hash>]
                                 [-d | --dry-run
                                 [-m | --message <release message>]
                                 [-s | --semver-type <patch (default) | minor | major>]
@@ -65,6 +63,9 @@ HELP
   -c | --commit)
     shift
     commit="$1"
+    if [ -z "$commit" ]; then
+      fail "No commit specified"
+    fi
     ;;
   # Don't actually create the release in Github
   -d | --dry-run)
@@ -79,7 +80,7 @@ HELP
   -s | --semver-type)
     shift
     semver="$1"
-    if [[ $semver != "patch" || $semver != "minor" || $semver != "major" ]]; then
+    if [[ $semver != "patch" && $semver != "minor" && $semver != "major" ]]; then
       fail "Invalid semver-type: '$semver', expected one of [patch, major, minor]"
     fi
     ;;
@@ -105,13 +106,13 @@ fi
 msg "Pulling master"
 git pull
 
-# Make errors not fail the script, because if the deployed_tag command fails we want to continue
+# Make errors not fail the script to allow us to check return codes
 set +e
 
 # Ensure that there are no newer local commits
-git status | grep 'branch is ahead' > /dev/null 2>&1
-if [[ $? == 0 ]]; then
-  fail "The local branch is ahead of the remote. Please push changes and try again."
+git status | grep 'branch is up to date' > /dev/null 2>&1
+if [[ $? != 0 ]]; then
+  fail "The local branch is not in sync with the remote. Please check and try again."
 fi
 
 # Check if latest commit is already deployed
@@ -128,10 +129,21 @@ if [[ $? != 0 ]]; then
   fail "hub is not accessible, aborting deploy. Please install hub and try again."
 fi
 
+# Ensure that the chosen commit is valid
+head_commit=false
+[[ $commit == "@" || $commit == "HEAD" ]] && head_commit=true
+
+if [ $head_commit = false ]; then
+  git log --pretty="%H" $(git describe --tags --abbrev=0 @^)..@ | grep "$commit" > /dev/null 2>&1
+  if [[ $? != 0 ]]; then
+    fail "Invalid commit: $commit"
+  fi
+fi
+
 # Make errors fail the script again (so undo set +e)
 set -e
 
-# git fetch --tags
+git fetch --tags
 
 # Get the most recent tag from git
 most_recent_tag=$(git describe --tags --abbrev=0)
@@ -174,11 +186,10 @@ if [ "$dryrun" = true ]; then
 fi
 
 msg "Releasing $new_tag to production"
-
-if [[ $commit ]]; then
-  hub release create -t $commit -m "$release_message" $new_tag
+if [ "$head_commit" = true ]; then
+  hub release create -m "$release_message" "$new_tag"
 else
-  hub release create -m "$release_message" $new_tag
+  hub release create -m "$release_message" -t "$commit" "$new_tag"
 fi
 
 msg "Release created, new changes in this release: $changelog_url"
