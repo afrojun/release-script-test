@@ -40,7 +40,7 @@ fi
 ## Parse input options ##
 
 dryrun=false
-commit=""
+commit="@"
 app=$(basename $PWD)
 release_title="New $app release"
 semver="patch"
@@ -154,7 +154,7 @@ elif [[ $semver == "patch" ]]; then
   new_tag="$new_tag${current_version[0]}.${current_version[1]}.$new_patch"
 fi
 
-release_commits=$(git log --reverse --pretty="* %s (%an)" $(git describe --tags --abbrev=0 @^)..@)
+release_commits=$(git log --reverse --pretty="* %s (%an)" $(git describe --tags --abbrev=0 $commit^)..$commit)
 base_url="https://github.$(git config remote.origin.url | cut -f2 -d. | tr ':' /)"
 changelog_url="$base_url/compare/$most_recent_tag...$new_tag"
 
