@@ -6,6 +6,11 @@ function msg() {
   echo "*** $*"
 }
 
+function fail() {
+  echo -e "\nERROR: $*"
+  exit 1
+}
+
 function confirm() {
   confirming_message="I will be responsible for the consequences of deploying out of working hours."
 
@@ -75,14 +80,12 @@ HELP
     shift
     semver="$1"
     if [[ $semver != "patch" || $semver != "minor" || $semver != "major" ]]; then
-      msg "ERROR: Invalid semver-type: '$semver', expected one of [patch, major, minor]"
-      exit 1
+      fail "Invalid semver-type: '$semver', expected one of [patch, major, minor]"
     fi
     ;;
   *)
     # Do whatever you want with extra options
-    echo "ERROR: Unknown option: '$key'"
-    exit 1
+    fail "Unknown option: '$key'"
     ;;
   esac
   # Shift after checking all the cases to get the next option
@@ -104,6 +107,13 @@ git pull
 
 # Make errors not fail the script, because if the deployed_tag command fails we want to continue
 set +e
+
+# Ensure that there are no newer local commits
+git status | grep 'branch is ahead' > /dev/null 2>&1
+if [[ $? == 0 ]]; then
+  fail "The local branch is ahead of the remote. Please push changes and try again."
+fi
+
 # Check if latest commit is already deployed
 deployed_tag=$(git describe --exact-match --tags HEAD 2>/dev/null)
 # $? stores the exit code of the last command which was run
@@ -115,8 +125,7 @@ fi
 # Check that hub is available to use
 hub --version > /dev/null 2>&1
 if [[ $? != 0 ]]; then
-  msg "ERROR: hub is not accessible, aborting deploy. Please install hub and try again."
-  exit 1
+  fail "hub is not accessible, aborting deploy. Please install hub and try again."
 fi
 
 # Make errors fail the script again (so undo set +e)
